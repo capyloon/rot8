@@ -116,6 +116,7 @@ fn get_window_server_rotation_state(display: &str, backend: &Backend) -> Result<
     }
 }
 
+#[derive(Clone)]
 struct Orientation {
     vector: (f32, f32),
     new_state: &'static str,
@@ -239,7 +240,7 @@ fn main() -> Result<(), String> {
     let display = matches.value_of("display").unwrap_or("default.conf");
     let touchscreens: Vec<&str> = matches.values_of("touchscreen").unwrap().collect();
     let disable_keyboard = matches.is_present("keyboard");
-    let threshold = matches.value_of("threshold").unwrap_or("default.conf");
+    let threshold = matches.value_of("threshold").unwrap_or("0.5");
     let old_state_owned = get_window_server_rotation_state(display, &backend)?;
     let mut old_state = old_state_owned.as_str();
 
@@ -252,6 +253,8 @@ fn main() -> Result<(), String> {
 
     let normalization_factor = matches.value_of("normalization-factor").unwrap_or("1e6");
     let normalization_factor = normalization_factor.parse::<f32>().unwrap_or(1e6);
+
+    let threshold = threshold.parse::<f32>().unwrap_or(0.5);
 
     let keyboards = get_keyboards(&backend)?;
 
@@ -301,7 +304,9 @@ fn main() -> Result<(), String> {
             },
         ];
 
-        let mut current_orient: &Orientation = &orientations[0];
+        let mut current_orient = orientations[0].clone();
+
+        eprintln!("=================== STARTING ===========================");
 
         loop {
             let x_raw = fs::read_to_string(path_x.as_str()).unwrap();
@@ -338,10 +343,11 @@ fn main() -> Result<(), String> {
                 _ => mut_y,
             };
 
-            for orient in orientations.iter() {
+            for orient in &orientations {
                 let d = (x - orient.vector.0).powf(2.0) + (y - orient.vector.1).powf(2.0);
-                if d < threshold.parse::<f32>().unwrap_or(0.5) {
-                    current_orient = orient;
+                // eprintln!("d={} for {}", d, orient.new_state);
+                if d < threshold {
+                    current_orient = orient.clone();
                     break;
                 }
             }
@@ -349,6 +355,8 @@ fn main() -> Result<(), String> {
             new_state = current_orient.new_state;
             x_state = current_orient.x_state;
             matrix = current_orient.matrix;
+
+            eprintln!("old_state={} new_state={}", old_state, new_state);
 
             if new_state != old_state {
                 let keyboard_state = if new_state == "normal" {
